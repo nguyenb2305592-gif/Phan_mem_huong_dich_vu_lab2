@@ -20,8 +20,10 @@ public class BookService {
     }
 
     public Page<BookEntity> list(String q, Pageable pageable) {
-        // TODO(TH2-3): khi q khác rỗng, tìm theo tiêu đề HOẶC tác giả (phương thức truy vấn dẫn xuất của BookRepository)
-        return repository.findAll(pageable);
+        if (q == null || q.isBlank()) {
+            return repository.findAll(pageable);
+        }
+        return repository.findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q.trim(), q.trim(), pageable);
     }
 
     public BookEntity get(String isbn) {
@@ -38,15 +40,18 @@ public class BookService {
         return repository.saveAndFlush(e);
     }
 
-    /** Cập nhật có điều kiện: chỉ ghi khi phiên bản client đang giữ trùng phiên bản hiện tại. */
-    @Transactional
-    public BookEntity update(String isbn, BookUpdateRequest r, long expectedVersion) {
-        BookEntity e = get(isbn);
-        // TODO(TH2-5): nếu e.getVersion() != expectedVersion thì ném PreconditionFailedException (→ 412)
-        e.apply(r.getTitle(), r.getAuthor(), r.getAuthorId(), r.getPublishedYear(),
-                r.getPrice().getAmount(), r.getPrice().getCurrency().getValue());
-        return repository.saveAndFlush(e);
+/** Cập nhật có điều kiện: chỉ ghi khi phiên bản client đang giữ trùng phiên bản hiện tại. */
+@Transactional
+public BookEntity update(String isbn, BookUpdateRequest r, long expectedVersion) {
+    BookEntity e = get(isbn);
+    if (e.getVersion() != expectedVersion) {
+        throw new PreconditionFailedException(
+                "ETag \"" + expectedVersion + "\" đã cũ, phiên bản hiện tại là \"" + e.getVersion() + "\"");
     }
+    e.apply(r.getTitle(), r.getAuthor(), r.getAuthorId(), r.getPublishedYear(),
+            r.getPrice().getAmount(), r.getPrice().getCurrency().getValue());
+    return repository.saveAndFlush(e);
+}
 
     @Transactional
     public void delete(String isbn) {
